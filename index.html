@@ -1,0 +1,136 @@
+<!doctype html>
+<html>
+<head>
+    <title>To Do List Distributed Application</title>
+
+    <head>
+        <!-- Look and feel powered by Semantic UI and jQuerys -->
+        <link rel="stylesheet" type="text/css" href="semantic-ui/dist/semantic.min.css">
+        <script
+          src="https://code.jquery.com/jquery-3.1.1.min.js"
+          integrity="sha256-hVVnYaiADRTO2PzUGmuLJr8BLUSjGIZsDYGmIJLv2b8="
+          crossorigin="anonymous"></script>
+        <script src="semantic-ui/dist/semantic.min.js"></script>
+        
+        <!-- Import the web3.js. Though web3 object is injected by Metamask into the document..
+            ..but this acts as fallback if Metamask isnt enabled -->
+        <script src="./web3.js/dist/web3.js"></script>
+        <script type="text/javascript">
+            
+            var contractInstance //global variable shared across all sfunctions
+
+            var readAllToDOs = false //hack because for unknown reason Metamask keeps firing the event of last todo added right on the load of document!
+
+            window.addEventListener('load', function() {
+
+                // Checking if Web3 has been injected by the browser (Mist/MetaMask)
+                if (typeof web3 !== 'undefined') {
+                // Use Mist/MetaMask's provider
+                web3js = new Web3(web3.currentProvider);
+                } else {
+                console.log('No web3? You should consider trying MetaMask!')
+                // fallback - use your fallback strategy (local node / hosted node + in-dapp id mgmt / fail)
+                web3js = new Web3(new Web3.providers.HttpProvider("http://localhost:8545"));
+                }
+
+                // Now you can start your app & access web3 freely:
+                startApp();
+
+            })
+        </script>
+
+        <script type='text/javascript'>
+            function startApp(){
+                var contractInstance = initSmartContract();
+                read_TODOs_from_blockchain(0); // a recursive function. Starts with index = 0. Continues to call itself until all the tasks from smart contract are read
+            }
+            
+            function initSmartContract(){
+                var contractAddress  = "0x67b5656d60a809915323bf2c40a8bef15a152e3e"
+                var contractABI = [{"constant":false,"inputs":[{"name":"label","type":"string"}],"name":"createTask","outputs":[{"name":"","type":"uint256"}],"payable":false,"stateMutability":"nonpayable","type":"function"},{"constant":true,"inputs":[{"name":"","type":"uint256"}],"name":"ToDoItems","outputs":[{"name":"label","type":"string"},{"name":"assignedDate","type":"uint256"},{"name":"completionDate","type":"uint256"},{"name":"status","type":"bool"}],"payable":false,"stateMutability":"view","type":"function"},{"anonymous":false,"inputs":[{"indexed":false,"name":"label","type":"string"},{"indexed":false,"name":"id","type":"uint256"}],"name":"ToDoAdded","type":"event"}]
+                contractInstance = web3js.eth.contract(contractABI).at(contractAddress);
+
+                var eventToDoAdded = contractInstance.ToDoAdded()
+                eventToDoAdded.watch(function(error,result){
+                if(!error){
+                    if (readAllToDOs ==true){ //hack because for unknown reason Metamask keeps firing the event of last todo item right on the load of document!
+                        var index_of_item = result['args']['id']['c'][0]
+                        var label_of_item = result['args']['label']
+                        insertToDoInView(label_of_item,index_of_item)
+                        $("#newtask").val("")
+                    }
+                }
+                })
+
+            }
+
+            function read_TODOs_from_blockchain(index){
+                // a recursive function. Starts with index = 0. Continues to call itself until all the tasks from smart contract are read
+
+                contractInstance.ToDoItems(index,function(error,result){
+                    if (!error){
+                        //task found.
+                        
+                        index = index + 1;
+                        
+                        //print it
+                        insertToDoInView(result[0],index);
+
+                        // prepare to retrieve the next task from smart contract
+                        read_TODOs_from_blockchain(index);
+                    }else{
+                        //end of the task list
+                        console.log("total count of to do's found : " + index)
+                        readAllToDOs = true;
+                    }
+                });
+            }
+
+
+            function insertToDoInView(task,index){
+                // Use jquery to append task into the list of tasks
+                $("#todoitems").append("<div class='item ui checkbox' id='task-" + index + "'><input type='checkbox' id='checkbox-" +index + "'><label>" + task + "</label></div>");
+                $("#task-" + index).transition('glow');
+            }
+
+            function insertToDoInBlockChain(task){
+                var newtask = $("#newtask").val();
+                contractInstance.createTask(newtask,function(error,result){
+                    if(!error){
+                        // todo added in blockchain.
+                        // but we must wait for event to fire to learn the index of the todo that was added
+                        // see eventToDoAdded()
+                    }else
+                        console.error(error);
+                })
+            }
+
+
+        </script>
+    </head>
+
+<body style="padding-left:50px; padding-top:50px" >
+
+    <h1>ToDo - Distributed Application</h1>
+    
+    <!-- Input form where user can type in task title -->
+    <div class="ui form">
+        <div class="two fields">
+                <div class="field">
+                        <input type="text" id="newtask" placeholder="Type the task you wish to add..">
+                    </div>
+                    <input class="ui submit button" type=submit value=Add onClick=insertToDoInBlockChain()>
+                    
+                    </div>
+            
+        </div>
+    </div>
+
+    <!-- List of tasks..
+        ..Kept empty on load. Would be filled by function read_TODOs_from_blockchain() on load of document -->
+    <div id="todoitems" class="ui list">
+    </div>
+
+
+</body>
+</html>
